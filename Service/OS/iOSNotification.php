@@ -3,9 +3,12 @@
 namespace RMS\PushNotificationsBundle\Service\OS;
 
 use RMS\PushNotificationsBundle\Exception\InvalidMessageTypeException,
-    RMS\PushNotificationsBundle\Message\iOSMessage,
-    RMS\PushNotificationsBundle\Message\MessageInterface;
-use Buzz\Browser;
+    RMS\PushNotificationsBundle\Message\MessageInterface,
+    RMS\PushNotificationsBundle\Message\iOSMessage;
+
+use RMS\PushNotificationsBundle\Device\Types;
+
+use Traversable;
 
 class iOSNotification implements OSNotificationServiceInterface
 {
@@ -47,15 +50,15 @@ class iOSNotification implements OSNotificationServiceInterface
     /**
      * Send a notification message
      *
-     * @param \RMS\PushNotificationsBundle\Message\MessageInterface|\RMS\PushNotificationsBundle\Service\OS\MessageInterface $message
+     * @param \RMS\PushNotificationsBundle\Message\MessageInterface $message
      * @throws \RuntimeException
      * @throws \RMS\PushNotificationsBundle\Exception\InvalidMessageTypeException
      * @return bool
      */
     public function send(MessageInterface $message)
     {
-        if (!$message instanceof iOSMessage) {
-            throw new InvalidMessageTypeException(sprintf("Message type '%s' not supported by APN", get_class($message)));
+        if ($message->getTargetOS() != Types::OS_IOS) {
+            throw new InvalidMessageTypeException(sprintf("Message OS '%s' not supported by APN", $message->getTargetOS()));
         }
 
         $apnURL = "ssl://gateway.push.apple.com:2195";
@@ -68,8 +71,19 @@ class iOSNotification implements OSNotificationServiceInterface
             throw new \RuntimeException("Couldn't connect to APN server");
         }
 
-        $payload = $this->createPayload($message->getDeviceIdentifier(), $message->getMessageBody());
-        $result = fwrite($fp, $payload, strlen($payload));
+
+        if ($message instanceof Traversable) {
+            $result = 0;
+            /** @var iOSMessage[] $message */
+            foreach ($message as $subMessage) {
+                $payload = $this->createPayload($subMessage->getDeviceIdentifier(), $subMessage->getMessageBody());
+                $result += fwrite($fp, $payload, strlen($payload));
+            }
+        } else {
+            $payload = $this->createPayload($message->getDeviceIdentifier(), $message->getMessageBody());
+            $result = fwrite($fp, $payload, strlen($payload));
+        }
+
         fclose($fp);
         return $result;
     }
